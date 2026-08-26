@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# MovieLens datasets
+data/ml-32m/
+data/ml-1m/
+data/ml-latest/
+data/**/*.zip
+
+# Trained models
+models/*.joblib
+models/*.pkl
+models/*.pickle
+
+# Downloaded posters/cache
+data/posters/
+poster_cache/
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# Local test files
+poster_test.jpg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
