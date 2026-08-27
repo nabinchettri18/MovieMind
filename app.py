@@ -1,7 +1,4 @@
 from pathlib import Path
-import json
-import hashlib
-import urllib.request
 
 import joblib
 import pandas as pd
@@ -80,14 +77,6 @@ if "clean_title" not in movies.columns:
 
 
 @st.cache_data(show_spinner=False, max_entries=5000)
-def get_poster_url(tmdb_id, api_key):
-    if not api_key or tmdb_id is None or pd.isna(tmdb_id):
-        return ""
-    details = tmdb.movie_details(int(tmdb_id))
-    return tmdb.image_url(details.get("poster_path", ""), "w500")
-
-
-@st.cache_data(show_spinner=False, max_entries=5000)
 def get_local_poster(tmdb_id, api_key):
     if not api_key or tmdb_id is None or pd.isna(tmdb_id):
         return ""
@@ -103,6 +92,8 @@ if "movie_search" not in st.session_state:
     st.session_state.movie_search = ""
 if "details_movie_id" not in st.session_state:
     st.session_state.details_movie_id = None
+if "details_context" not in st.session_state:
+    st.session_state.details_context = None
 
 
 st.markdown("""
@@ -125,15 +116,13 @@ div[data-testid="stNumberInput"] input{background:#fff!important;color:#101828!i
 .stButton>button{background:#1455c0!important;color:#fff!important;border:none!important;border-radius:10px!important;min-height:46px!important;font-weight:900!important}.stButton>button p{color:#fff!important;font-weight:900!important}.stButton>button:hover{background:#0b3b91!important}
 [data-testid="stImage"] img{width:100%!important;aspect-ratio:2/3!important;object-fit:cover!important;object-position:center!important;border-radius:12px!important;display:block!important}.poster-fallback{width:100%;aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;padding:25px;text-align:center;color:#667085;font-size:13px;font-weight:750;line-height:1.45;background:#edf2f8;border-radius:12px}
 .movie-number{color:#155eef;font-size:10px;font-weight:900;letter-spacing:.8px;text-transform:uppercase;margin-top:14px;margin-bottom:5px}.movie-title{color:#081a36;font-size:18px;font-weight:900;line-height:1.28;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:46px}.movie-year{color:#155eef;font-size:12px;font-weight:850;margin-top:6px}.movie-genres{color:#475467;font-size:12px;font-weight:600;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:35px;margin-top:10px}.movie-score-label{color:#667085;font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.55px;margin-top:15px}.movie-score{color:#101828;font-size:19px;font-weight:900;margin-top:2px}.why-label{color:#155eef;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.6px;margin-top:14px}.why-text{color:#475467;font-size:11px;font-weight:550;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px}
-.details-title{color:#081a36;font-size:38px;font-weight:900;line-height:1.12;margin-bottom:6px}.details-meta{color:#155eef;font-size:13px;font-weight:800;margin-bottom:12px}.details-overview{color:#344054;font-size:15px;font-weight:500;line-height:1.7}.details-label{color:#667085;font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase;margin-top:18px}.details-value{color:#101828;font-size:18px;font-weight:900;margin-top:3px}
+.details-title{color:#081a36;font-size:38px;font-weight:900;line-height:1.12;margin-bottom:6px}.details-meta{color:#155eef;font-size:13px;font-weight:800;margin-bottom:12px}.details-overview{color:#344054;font-size:15px;font-weight:500;line-height:1.7}.details-label{color:#667085;font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase;margin-top:18px}.details-value{color:#101828;font-size:18px;font-weight:900;margin-top:3px}.details-reason{background:#f0f6ff;border:1px solid #d6e5ff;border-radius:12px;padding:14px 16px;color:#344054;font-size:13px;font-weight:600;line-height:1.55;margin-top:8px}.details-match{font-size:32px;font-weight:900;color:#155eef}.details-source{font-size:11px;color:#667085;font-weight:650;margin-top:8px}
 @media(max-width:900px){.hero-title{font-size:42px}.details-title{font-size:32px}}@media(max-width:640px){.block-container{padding-left:14px;padding-right:14px}.hero-kicker{margin-top:18px}.hero-title{font-size:36px;letter-spacing:-1px}.hero-description{font-size:15px}.movie-title{font-size:20px}.movie-genres{font-size:13px}.movie-score{font-size:20px}.details-title{font-size:28px}}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ============================================================
 # SIDEBAR
-# ============================================================
 with st.sidebar:
     st.title("MovieMind")
     st.caption("Personalized Movie Discovery")
@@ -144,41 +133,31 @@ with st.sidebar:
         st.session_state.selected_movie = None
         st.session_state.movie_search = ""
         st.session_state.details_movie_id = None
+        st.session_state.details_context = None
+        st.rerun()
     st.divider()
     st.subheader("Quick Picks")
-    quick_picks = [
-        "Toy Story (1995)",
-        "Forrest Gump (1994)",
-        "Inception (2010)",
-        "Interstellar (2014)",
-        "Dune (2021)",
-    ]
+    quick_picks = ["Toy Story (1995)", "Forrest Gump (1994)", "Inception (2010)", "Interstellar (2014)", "Dune (2021)"]
     available_movies = set(movies["title"].astype(str))
     for title in quick_picks:
-        if title in available_movies:
-            if st.button(title, use_container_width=True):
-                st.session_state.selected_movie = title
-                st.session_state.movie_search = title
-                st.session_state.recommendations = None
-                st.session_state.details_movie_id = None
+        if title in available_movies and st.button(title, use_container_width=True):
+            st.session_state.selected_movie = title
+            st.session_state.movie_search = title
+            st.session_state.recommendations = None
+            st.session_state.details_movie_id = None
+            st.session_state.details_context = None
+            st.rerun()
     st.divider()
     st.subheader("Explore")
-    st.caption("Drama")
-    st.caption("Comedy")
-    st.caption("Action")
-    st.caption("Romance")
-    st.caption("Horror")
-    st.caption("Science Fiction")
-    st.caption("Animation")
+    for genre in ["Drama", "Comedy", "Action", "Romance", "Horror", "Science Fiction", "Animation"]:
+        st.caption(genre)
     st.divider()
     st.caption("Personalized movie discovery.")
     st.divider()
     st.caption("This product uses the TMDB API but is not endorsed or certified by TMDB.")
 
 
-# ============================================================
 # HERO
-# ============================================================
 left, right = st.columns([5, 1], vertical_alignment="center")
 with left:
     st.caption("MovieMind")
@@ -190,17 +169,16 @@ st.markdown('<div class="hero-description">Tell MovieMind what you enjoy and dis
 st.info("Personalized movie recommendations")
 
 
-# ============================================================
 # DETAIL VIEW
-# ============================================================
-
-detail_id = st.session_state.details_movie_id
-if detail_id is not None:
+if st.session_state.details_movie_id is not None:
+    detail_id = st.session_state.details_movie_id
     details = tmdb.movie_details(detail_id)
-    local_poster = tmdb.local_poster(details.get("poster_path", ""))
+    context = st.session_state.details_context or {}
+    local_poster = tmdb.local_poster(details.get("poster_path", "")) if details else ""
 
     if st.button("Back to recommendations"):
         st.session_state.details_movie_id = None
+        st.session_state.details_context = None
         st.rerun()
 
     if details:
@@ -211,10 +189,10 @@ if detail_id is not None:
             else:
                 st.markdown('<div class="poster-fallback">Poster unavailable</div>', unsafe_allow_html=True)
         with detail_right:
-            title = details.get("title", "Movie")
+            title = details.get("title", context.get("title", "Movie"))
             release = details.get("release_date", "")
-            year = release[:4] if release else ""
-            genres = " · ".join(details.get("genres", []))
+            year = release[:4] if release else context.get("year", "")
+            genres = " · ".join(details.get("genres", [])) or context.get("genres", "")
             runtime = details.get("runtime")
             vote = details.get("vote_average")
 
@@ -225,6 +203,16 @@ if detail_id is not None:
                 st.markdown(f'<div class="details-meta">{genres}</div>', unsafe_allow_html=True)
             if details.get("tagline"):
                 st.markdown(f'**{details["tagline"]}**')
+
+            if context:
+                match = context.get("match_score")
+                estimate = context.get("predicted_rating")
+                st.markdown('<div class="details-label">MovieMind match</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="details-match">{match}%</div>', unsafe_allow_html=True)
+                st.markdown('<div class="details-label">Model estimate</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="details-value">{estimate:.2f} / 5</div>', unsafe_allow_html=True)
+                st.markdown('<div class="details-label">Why MovieMind recommended it</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="details-reason">{context.get("reason", "Recommended from content, collaborative and diversity signals related to your selected movie.")}</div>', unsafe_allow_html=True)
 
             metric_a, metric_b = st.columns(2)
             with metric_a:
@@ -239,19 +227,18 @@ if detail_id is not None:
 
             if details.get("homepage"):
                 st.link_button("Open official movie page", details["homepage"], use_container_width=True)
+            st.markdown('<div class="details-source">MovieMind recommendation signals are generated by the local hybrid recommendation engine; movie metadata is supplied by TMDB.</div>', unsafe_allow_html=True)
 
         st.divider()
-        st.subheader("MovieMind")
-        st.caption("This title is part of your selected recommendation context. Return to recommendations to explore more movies.")
+        st.subheader("Recommendation context")
+        st.caption(f"This movie was recommended because you selected {context.get('selected_movie', 'your movie')} as a taste signal.")
     else:
         st.warning("Movie details are unavailable right now.")
 
     st.stop()
 
 
-# ============================================================
 # SEARCH PANEL
-# ============================================================
 with st.container(border=True):
     st.subheader("Tell MovieMind what you like")
     st.caption("Search the MovieMind catalog and choose a movie you already love.")
@@ -300,10 +287,7 @@ else:
     find_movies = False
 
 
-# ============================================================
 # SECOND-STAGE RANKING
-# ============================================================
-
 def rerank_recommendations(recommendations, selected_movie, limit):
     if recommendations is None or recommendations.empty:
         return pd.DataFrame()
@@ -326,15 +310,12 @@ def rerank_recommendations(recommendations, selected_movie, limit):
     df["year"] = pd.to_numeric(df["year"], errors="coerce")
 
     def norm(series):
-        low = float(series.min())
-        high = float(series.max())
+        low, high = float(series.min()), float(series.max())
         if high <= low:
             return pd.Series(0.5, index=series.index)
         return ((series - low) / (high - low)).clip(0, 1)
 
-    h = norm(df["hybrid_score"])
-    c = norm(df["content_score"])
-    r = norm(df["predicted_rating"])
+    h, c, r = norm(df["hybrid_score"]), norm(df["content_score"]), norm(df["predicted_rating"])
     age = (2026 - df["year"]).clip(lower=0, upper=50)
     modern = (1 - age / 50).fillna(0.35).clip(0, 1)
     df["_base"] = 0.52 * h + 0.25 * c + 0.10 * r + 0.13 * modern
@@ -343,15 +324,10 @@ def rerank_recommendations(recommendations, selected_movie, limit):
         return {x.strip().lower() for x in str(value).split("|") if x.strip() and x.strip().lower() != "(no genres listed)"}
 
     df["_genres"] = df.get("genres", pd.Series("", index=df.index)).apply(genres)
-
-    chosen = []
-    chosen_sets = []
-    remaining = df.copy()
+    chosen, chosen_sets, remaining = [], [], df.copy()
 
     while len(chosen) < min(limit, len(df)) and not remaining.empty:
-        best_idx = None
-        best_score = float("-inf")
-
+        best_idx, best_score = None, float("-inf")
         for idx, row in remaining.iterrows():
             current_genres = row["_genres"]
             max_overlap = 0.0
@@ -363,60 +339,34 @@ def rerank_recommendations(recommendations, selected_movie, limit):
             diversity = 1.0 - max_overlap
             score = 0.82 * float(row["_base"]) + 0.18 * diversity
             if score > best_score:
-                best_score = score
-                best_idx = idx
-
+                best_score, best_idx = score, idx
         row = remaining.loc[best_idx].copy()
         row["rank_score"] = best_score
         chosen.append(row)
         chosen_sets.append(row["_genres"])
         remaining = remaining.drop(index=best_idx)
 
-    if not chosen:
-        return pd.DataFrame()
-
-    result = pd.DataFrame(chosen).drop(columns=["_base", "_genres"], errors="ignore")
-    return result.reset_index(drop=True)
+    return pd.DataFrame(chosen).drop(columns=["_base", "_genres"], errors="ignore").reset_index(drop=True) if chosen else pd.DataFrame()
 
 
-# ============================================================
 # RECOMMENDATIONS
-# ============================================================
-
 if find_movies:
     try:
         with st.spinner("Finding movies for you..."):
             raw_count = min(max(int(recommendation_count) * 4, 40), 100)
-            candidates = recommender.recommend(
-                user_id=int(user_id),
-                movie_title=selected_movie,
-                num_recommendations=raw_count,
-            )
-            st.session_state.recommendations = rerank_recommendations(
-                candidates,
-                selected_movie,
-                int(recommendation_count),
-            )
+            candidates = recommender.recommend(user_id=int(user_id), movie_title=selected_movie, num_recommendations=raw_count)
+            st.session_state.recommendations = rerank_recommendations(candidates, selected_movie, int(recommendation_count))
     except Exception:
         st.session_state.recommendations = None
         st.warning("We couldn't find recommendations right now. Please try another movie.")
 
 
-# ============================================================
 # RESULTS
-# ============================================================
-
 if st.session_state.recommendations is not None:
     recommendations = st.session_state.recommendations.copy()
-
     if not recommendations.empty:
         recommendations["movieId"] = pd.to_numeric(recommendations["movieId"], errors="coerce").astype("Int64")
-        recommendations = recommendations.merge(
-            movies[["movieId", "tmdbId", "year"]],
-            on="movieId",
-            how="left",
-            suffixes=("", "_catalog"),
-        )
+        recommendations = recommendations.merge(movies[["movieId", "tmdbId", "year"]], on="movieId", how="left", suffixes=("", "_catalog"))
 
     st.divider()
     st.subheader("Your recommendations")
@@ -428,7 +378,6 @@ if st.session_state.recommendations is not None:
         for start in range(0, len(recommendations), 3):
             row = recommendations.iloc[start:start + 3]
             columns = st.columns(3, gap="medium")
-
             for position, (column, (_, movie)) in enumerate(zip(columns, row.iterrows())):
                 with column:
                     title = str(movie["title"])
@@ -438,8 +387,7 @@ if st.session_state.recommendations is not None:
                     year_text = "" if year is None or pd.isna(year) else str(int(year))
                     genres_text = str(movie.get("genres", "")).replace("|", " · ")
                     rating = float(movie.get("predicted_rating", 0))
-                    match_score = int(round(float(movie.get("rank_score", 0)) * 100))
-                    match_score = max(1, min(99, match_score))
+                    match_score = max(1, min(99, int(round(float(movie.get("rank_score", 0)) * 100))))
                     poster_path = get_local_poster(movie.get("tmdbId"), TMDB_API_KEY)
 
                     if poster_path:
@@ -461,11 +409,23 @@ if st.session_state.recommendations is not None:
                     st.markdown(f'<div class="movie-score" style="font-size:15px;">{rating:.2f} / 5</div>', unsafe_allow_html=True)
                     st.markdown('<div class="why-label">WHY THIS MOVIE</div>', unsafe_allow_html=True)
                     st.markdown(f'<div class="why-text">Recommended from content, collaborative and diversity signals related to {selected_movie}.</div>', unsafe_allow_html=True)
+
                     if st.button("View details", key=f"details_{int(movie['movieId'])}", use_container_width=True):
                         st.session_state.details_movie_id = movie.get("tmdbId")
+                        st.session_state.details_context = {
+                            "title": title,
+                            "year": year_text,
+                            "genres": genres_text,
+                            "match_score": match_score,
+                            "predicted_rating": rating,
+                            "selected_movie": selected_movie,
+                            "content_score": float(movie.get("content_score", 0)),
+                            "hybrid_score": float(movie.get("hybrid_score", 0)),
+                            "rank_score": float(movie.get("rank_score", 0)),
+                            "reason": f"{match_score}% match because MovieMind combined content similarity, collaborative filtering, recency, and genre diversity around {selected_movie}.",
+                        }
                         st.rerun()
 
 
 st.divider()
 st.caption("MovieMind  •  Personalized Movie Discovery")
-''
